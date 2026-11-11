@@ -1,0 +1,42 @@
+# Compila solo el firmware de Mate 1 (no toda la lista de placas de XiaoZhi).
+# Misma imagen y mismo script que la compilación oficial ("Build Boards"),
+# pero pasando la palabra de activación y el idioma de forma explícita.
+name: Build Mate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Mate 1 (bread-compact-wifi-128x64, Jarvis)
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v6.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python scripts/build.py bread-compact-wifi \
+            --name bread-compact-wifi-128x64 \
+            --language en-US \
+            --wake-word wn9_jarvis_tts
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mate1_bread-compact-wifi-128x64_${{ github.sha }}
+          path: build/merged-binary.bin
+          if-no-files-found: error
