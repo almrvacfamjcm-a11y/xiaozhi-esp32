@@ -23,7 +23,7 @@ static constexpr int kMateDetectorGain = 0;
 
 // Mate (F3): umbral bajo para que MultiNet informe también las coincidencias débiles.
 // El robot solo se despierta si la frase es de acción "wake" y supera el umbral real.
-static constexpr float kMateDiagThreshold = 0.05f;
+static constexpr float kMateDiagThreshold = 0.01f;
 
 #if CONFIG_SR_MN_EN_MULTINET7_QUANT
 // Mate (F3): frases de prueba, solo se miden y nunca despiertan al robot. Son
@@ -39,6 +39,9 @@ static const MateDiagPhrase kMateDiagPhrases[] = {
     {102, "che mate B", "pd MnTd"},  // CH EY | M AA T EY
     {103, "che mate C", "pf McTf"},  // CH EH | M AH T EH
     {104, "che mate D", "pf MnTg"},  // CH EH | M AA T IH
+    // Control: a long English command from Espressif's examples, converted by ESP-SR.
+    // If this one is not recognized either, the problem is not the phrase.
+    {105, "turn on the light", nullptr},
 };
 #endif  // CONFIG_SR_MN_EN_MULTINET7_QUANT
 #endif  // CONFIG_MATE_AUDIO_DIAG
@@ -173,13 +176,17 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
     multinet_->set_det_threshold(multinet_model_data_, kMateDiagThreshold);
 #if CONFIG_SR_MN_EN_MULTINET7_QUANT
     for (const auto& phrase : kMateDiagPhrases) {
-        esp_err_t add_result = esp_mn_commands_phoneme_add(phrase.id, phrase.label, phrase.phonemes);
+        const char* phonemes = phrase.phonemes != nullptr ? phrase.phonemes : "auto";
+        esp_err_t add_result =
+            phrase.phonemes != nullptr
+                ? esp_mn_commands_phoneme_add(phrase.id, phrase.label, phrase.phonemes)
+                : esp_mn_commands_add(phrase.id, phrase.label);
         if (add_result != ESP_OK) {
             ESP_LOGE(TAG, "MultiNet did not accept test phrase %d \"%s\" (%s): %s", phrase.id,
-                     phrase.label, phrase.phonemes, esp_err_to_name(add_result));
+                     phrase.label, phonemes, esp_err_to_name(add_result));
         }
-        diag_summary_ += " [" + std::to_string(phrase.id) + " '" + phrase.label + "' " +
-                         phrase.phonemes + (add_result == ESP_OK ? " ok]" : " RECHAZADA]");
+        diag_summary_ += " [" + std::to_string(phrase.id) + " '" + phrase.label + "' " + phonemes +
+                         (add_result == ESP_OK ? " ok]" : " RECHAZADA]");
     }
 #endif
 #endif

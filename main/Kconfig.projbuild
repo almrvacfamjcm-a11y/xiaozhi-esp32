@@ -1049,6 +1049,17 @@ config MATE_AUDIO_DIAG
         every phrase and the score of every detection, including test phrases that are
         only measured and never wake the device. Set to n when F3 is closed.
 
+config MATE_MIC_HIGH_PASS
+    bool "Mate: 100 Hz high-pass filter on the microphone"
+    default y
+    depends on USE_AFE_WAKE_WORD || USE_CUSTOM_WAKE_WORD
+    help
+        The serial logs of the Mate 1 robot (INMP441, air conditioning on) show rumble and
+        DC drift below 100 Hz about 20 dB above the noise in the voice band, at the same
+        level as speech at one metre. This filters the microphone signal before the AFE,
+        so the wake word detector and the audio sent to the server no longer carry it.
+        Only applied to single-channel input.
+
 config MATE_WAKE_WORD_GAIN
     int "Mate: gain applied to the audio fed to the custom wake word detector"
     default 4

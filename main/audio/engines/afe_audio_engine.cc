@@ -17,6 +17,11 @@
 
 #if CONFIG_MATE_AUDIO_DIAG
 #include "mate_audio.h"
+#if CONFIG_MATE_MIC_HIGH_PASS
+static constexpr const char* kMateMicFilterName = "100Hz";
+#else
+static constexpr const char* kMateMicFilterName = "no";
+#endif
 #endif
 
 #if CONFIG_USE_AUDIO_PROCESSOR
@@ -266,6 +271,12 @@ void AfeAudioEngine::Feed(std::vector<int16_t>&& data) {
     static MateLevelMeter mic_meter("microfono");
     mic_meter.Add(data.data(), data.size());
 #endif
+#if CONFIG_MATE_MIC_HIGH_PASS
+    // Mate (F3): remove rumble and DC drift before the AFE, the detector and the server.
+    if (codec_ != nullptr && codec_->input_channels() == 1) {
+        mic_high_pass_.Process(data.data(), data.data(), data.size());
+    }
+#endif
     if ((bits & kVoiceProcessingEnabled) && !kUseAfeForVoiceProcessing) {
         OutputRawAudio(data);
     }
@@ -470,8 +481,8 @@ void AfeAudioEngine::HandleWakeWordResult(const afe_fetch_result_t* result) {
         if (wake_detector_ == WakeDetector::kMultiNet) {
             custom_wake_word_->LogDiagSummary();
         } else {
-            ESP_LOGI(MATE_DIAG_TAG, "WakeNet palabra='%s'",
-                     wake_words_.empty() ? "?" : wake_words_[0].c_str());
+            ESP_LOGI(MATE_DIAG_TAG, "WakeNet palabra='%s' filtro_microfono=%s",
+                     wake_words_.empty() ? "?" : wake_words_[0].c_str(), kMateMicFilterName);
         }
     }
     if (wake_detector_ == WakeDetector::kWakeNet && result->wakeup_state == WAKENET_DETECTED) {

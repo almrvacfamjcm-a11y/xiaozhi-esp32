@@ -16,6 +16,9 @@
 #include <freertos/task.h>
 
 #include "audio_engine.h"
+#if CONFIG_MATE_MIC_HIGH_PASS
+#include "mate_audio.h"
+#endif
 #include "wake_words/wake_word_audio_cache.h"
 
 class CustomWakeWord;
@@ -88,6 +91,9 @@ private:
     std::vector<int16_t> input_buffer_;
     std::vector<int16_t> output_buffer_;
     std::mutex input_buffer_mutex_;
+#if CONFIG_MATE_MIC_HIGH_PASS
+    MateHighPass mic_high_pass_;
+#endif
 
     std::function<void(const std::string&)> wake_word_detected_callback_;
     std::function<void(std::vector<int16_t>&&)> output_callback_;
