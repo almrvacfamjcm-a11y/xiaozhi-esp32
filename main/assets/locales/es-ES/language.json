@@ -17,7 +17,7 @@
         "CHECK_NEW_VERSION_FAILED": "Error al verificar nueva versión, reintentando en %d segundos: %s",
         "SWITCH_TO_WIFI_NETWORK": "Cambiando a Wi-Fi...",
         "SWITCH_TO_4G_NETWORK": "Cambiando a 4G...",
-        "STANDBY": "En espera",
+        "STANDBY": "Mate 1",
         "WAKE_WORD_HINT": "Di «%s» para despertarme.",
         "CONNECT_TO": "Conectar a ",
         "CONNECTING": "Conectando...",

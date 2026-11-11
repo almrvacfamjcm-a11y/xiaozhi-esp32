@@ -19,7 +19,50 @@
 #include <esp_lcd_panel_sh1106.h>
 #endif
 
+#include <material_symbols.h>
+
 #define TAG "CompactWifiBoard"
+
+LV_FONT_DECLARE(font_material_symbols_30_1);
+
+// Mate 1: 3-second welcome screen at boot, drawn on top of the normal UI (128x64 only).
+class MateOledDisplay : public OledDisplay {
+public:
+    using OledDisplay::OledDisplay;
+
+    void SetupUI() override {
+        bool first_call = !IsSetupUICalled();
+        OledDisplay::SetupUI();
+        if (first_call && height_ >= 64) {
+            ShowSplash();
+        }
+    }
+
+private:
+    void ShowSplash() {
+        DisplayLockGuard lock(this);
+
+        lv_obj_t* splash = lv_obj_create(lv_screen_active());
+        lv_obj_remove_style_all(splash);
+        lv_obj_remove_flag(splash, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(splash, LV_HOR_RES, LV_VER_RES);
+        lv_obj_set_style_bg_color(splash, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(splash, LV_OPA_COVER, 0);
+        lv_obj_set_flex_flow(splash, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(splash, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                              LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(splash, 2, 0);
+
+        lv_obj_t* icon = lv_label_create(splash);
+        lv_obj_set_style_text_font(icon, &font_material_symbols_30_1, 0);
+        lv_label_set_text(icon, MATERIAL_SYMBOLS_ROBOT_2);
+
+        lv_obj_t* name = lv_label_create(splash);
+        lv_label_set_text(name, "Mate 1");
+
+        lv_obj_delete_delayed(splash, 3000);
+    }
+};
 
 class CompactWifiBoard : public WifiBoard {
 private:
@@ -97,7 +140,7 @@ private:
         ESP_LOGI(TAG, "Turning display on");
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
-        display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
+        display_ = new MateOledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
     }
 
     void InitializeButtons() {

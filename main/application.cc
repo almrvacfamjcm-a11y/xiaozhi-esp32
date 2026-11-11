@@ -515,11 +515,11 @@ void Application::CheckNewVersion() {
         retry_count = 0;
         retry_delay = 10;  // Reset retry delay
 
+        // Mate 1: never replace the custom firmware from the cloud. New versions are built in
+        // the fork and flashed by hand. Activation below keeps working as before.
         if (ota_->HasNewVersion()) {
-            if (UpgradeFirmware(ota_->GetFirmwareUrl(), ota_->GetFirmwareVersion())) {
-                return;  // This line will never be reached after reboot
-            }
-            // If upgrade failed, continue to normal operation
+            ESP_LOGW(TAG, "Mate: automatic upgrade to %s skipped",
+                     ota_->GetFirmwareVersion().c_str());
         }
 
         // No new version, mark the current version as valid
