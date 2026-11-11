@@ -20,25 +20,169 @@
 #endif
 
 #include <material_symbols.h>
+#include <esp_heap_caps.h>
+#include <esp_random.h>
+#include <cstring>
+
+#include "mate_faces.h"
 
 #define TAG "CompactWifiBoard"
 
 LV_FONT_DECLARE(font_material_symbols_30_1);
 
-// Mate 1: 3-second welcome screen at boot, drawn on top of the normal UI (128x64 only).
+// Mate 1 (128x64 only):
+// - 3-second welcome screen at boot, drawn on top of the normal UI.
+// - Butler faces (monocle and mustache) covering the content area, with a random blink.
+//   The ~20 cloud emotions are grouped into 10 faces (see FaceFor).
+// - A non-empty "system" message (activation code, Wi-Fi setup, errors) hides the face so its
+//   text stays readable. Conversation text stays hidden behind the face.
 class MateOledDisplay : public OledDisplay {
 public:
     using OledDisplay::OledDisplay;
+
+    ~MateOledDisplay() {
+        if (blink_timer_ != nullptr) {
+            DisplayLockGuard lock(this);
+            lv_timer_delete(blink_timer_);
+        }
+    }
 
     void SetupUI() override {
         bool first_call = !IsSetupUICalled();
         OledDisplay::SetupUI();
         if (first_call && height_ >= 64) {
+            CreateFaces();
             ShowSplash();
         }
     }
 
+    bool SetEmotion(const char* emotion) override {
+        bool shown = OledDisplay::SetEmotion(emotion);
+        if (face_image_ == nullptr) {
+            return shown;
+        }
+        DisplayLockGuard lock(this);
+        current_face_ = FaceFor(emotion);
+        eyes_closed_ = false;
+        lv_image_set_src(face_image_, &open_dsc_[current_face_]);
+        ScheduleBlink();
+        return true;
+    }
+
+    void SetChatMessage(const char* role, const char* content) override {
+        OledDisplay::SetChatMessage(role, content);
+        if (face_image_ == nullptr || role == nullptr || strcmp(role, "system") != 0) {
+            return;
+        }
+        DisplayLockGuard lock(this);
+        if (content != nullptr && content[0] != '\0') {
+            lv_obj_add_flag(face_image_, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_remove_flag(face_image_, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
 private:
+    lv_obj_t* face_image_ = nullptr;
+    lv_timer_t* blink_timer_ = nullptr;
+    lv_image_dsc_t open_dsc_[mate_faces::kCount] = {};
+    lv_image_dsc_t blink_dsc_[mate_faces::kBlinkCount] = {};
+    mate_faces::Face current_face_ = mate_faces::kNeutral;
+    bool eyes_closed_ = false;
+
+    static mate_faces::Face FaceFor(const char* emotion) {
+        using namespace mate_faces;
+        struct Entry {
+            const char* name;
+            Face face;
+        };
+        static const Entry kMap[] = {
+            {"happy", kHappy},         {"relaxed", kHappy},      {"delicious", kHappy},
+            {"confident", kHappy},     {"sad", kSad},            {"crying", kSad},
+            {"embarrassed", kSad},     {"surprised", kSurprised}, {"shocked", kSurprised},
+            {"thinking", kThinking},   {"confused", kThinking},  {"angry", kAngry},
+            {"laughing", kLaughing},   {"funny", kLaughing},     {"loving", kLoving},
+            {"kissy", kLoving},        {"sleepy", kSleepy},      {"winking", kWinking},
+            {"silly", kWinking},       {"cool", kWinking},
+        };
+        if (emotion != nullptr) {
+            for (const auto& entry : kMap) {
+                if (strcmp(entry.name, emotion) == 0) {
+                    return entry.face;
+                }
+            }
+        }
+        return kNeutral;
+    }
+
+    // Expands the 1-bit faces into RGB565 frames in PSRAM (about 200 KB) and creates the
+    // image object. If memory is short, Mate keeps the stock small emoji instead.
+    void CreateFaces() {
+        using namespace mate_faces;
+        const uint32_t stride = kWidth * sizeof(uint16_t);
+        const uint32_t frame_pixels = kWidth * kHeight;
+        const int frames = kCount + kBlinkCount;
+        auto* pixels = static_cast<uint16_t*>(heap_caps_malloc(
+            frame_pixels * sizeof(uint16_t) * frames, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (pixels == nullptr) {
+            ESP_LOGW(TAG, "Mate faces disabled: not enough PSRAM");
+            return;
+        }
+        for (int i = 0; i < frames; i++) {
+            const uint8_t* bits = i < kCount ? kOpen[i] : kBlink[i - kCount];
+            uint16_t* frame = pixels + i * frame_pixels;
+            for (uint32_t p = 0; p < frame_pixels; p++) {
+                bool lit = bits[p / 8] & (0x80 >> (p % 8));
+                frame[p] = lit ? 0x0000 : 0xFFFF;  // On this OLED, black is a lit pixel
+            }
+            lv_image_dsc_t& dsc = i < kCount ? open_dsc_[i] : blink_dsc_[i - kCount];
+            dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+            dsc.header.cf = LV_COLOR_FORMAT_RGB565;
+            dsc.header.w = kWidth;
+            dsc.header.h = kHeight;
+            dsc.header.stride = stride;
+            dsc.data_size = stride * kHeight;
+            dsc.data = reinterpret_cast<const uint8_t*>(frame);
+        }
+
+        DisplayLockGuard lock(this);
+        face_image_ = lv_image_create(lv_screen_active());
+        lv_obj_set_pos(face_image_, 0, 16);
+        lv_image_set_src(face_image_, &open_dsc_[kNeutral]);
+        blink_timer_ = lv_timer_create(BlinkTimerCallback, 4000, this);
+        ScheduleBlink();
+    }
+
+    // Must be called with the display lock held.
+    void ScheduleBlink() {
+        if (blink_timer_ == nullptr) {
+            return;
+        }
+        lv_timer_set_period(blink_timer_, 3000 + esp_random() % 3001);
+        lv_timer_reset(blink_timer_);
+    }
+
+    static void BlinkTimerCallback(lv_timer_t* timer) {
+        static_cast<MateOledDisplay*>(lv_timer_get_user_data(timer))->OnBlinkTimer();
+    }
+
+    // Runs in the LVGL task, which already holds the display lock.
+    void OnBlinkTimer() {
+        int blink = mate_faces::kBlinkIndex[current_face_];
+        if (eyes_closed_) {
+            eyes_closed_ = false;
+            lv_image_set_src(face_image_, &open_dsc_[current_face_]);
+            ScheduleBlink();
+        } else if (blink >= 0 && !lv_obj_has_flag(face_image_, LV_OBJ_FLAG_HIDDEN)) {
+            eyes_closed_ = true;
+            lv_image_set_src(face_image_, &blink_dsc_[blink]);
+            lv_timer_set_period(blink_timer_, 150);
+            lv_timer_reset(blink_timer_);
+        } else {
+            ScheduleBlink();
+        }
+    }
+
     void ShowSplash() {
         DisplayLockGuard lock(this);
 
