@@ -1049,6 +1049,18 @@ config MATE_AUDIO_DIAG
         every phrase and the score of every detection, including test phrases that are
         only measured and never wake the device. Set to n when F3 is closed.
 
+config MATE_WAKE_WORD_GAIN
+    int "Mate: gain applied to the audio fed to the custom wake word detector"
+    default 4
+    range 0 16
+    depends on USE_CUSTOM_WAKE_WORD
+    help
+        MultiNet is designed to receive speech with peaks around -6 dBFS (ESP-SR normally
+        scales it after WakeNet wakes up). Here MultiNet listens all the time with no AGC,
+        so the audio it receives is first high-pass filtered at 100 Hz, to remove rumble
+        and DC drift, and then multiplied by this factor. Only the detector input changes;
+        the audio sent to the server is untouched. 0 disables both filter and gain.
+
 config SEND_WAKE_WORD_DATA
     bool "Send Wake Word Data"
     default y

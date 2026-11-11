@@ -8,6 +8,10 @@
 #include <esp_mn_models.h>
 #include <model_path.h>
 
+#if CONFIG_MATE_AUDIO_DIAG || CONFIG_MATE_WAKE_WORD_GAIN > 0
+#include "mate_audio.h"
+#endif
+
 #include <deque>
 #include <string>
 #include <vector>
@@ -60,6 +64,12 @@ private:
     std::deque<Command> commands_;
 #if CONFIG_MATE_AUDIO_DIAG
     std::string diag_summary_;
+    MateLevelMeter detector_meter_{"entrada MultiNet"};
+#endif
+#if CONFIG_MATE_WAKE_WORD_GAIN > 0
+    // Mate (F3): the detector listens to a filtered and amplified copy of the audio.
+    MateHighPass detector_high_pass_;
+    std::vector<int16_t> detector_buffer_;
 #endif
  
     std::function<void(const std::string& wake_word)> wake_word_detected_callback_;

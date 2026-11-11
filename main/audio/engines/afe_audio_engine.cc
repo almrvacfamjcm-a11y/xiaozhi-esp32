@@ -16,7 +16,7 @@
 #define TAG "AfeAudioEngine"
 
 #if CONFIG_MATE_AUDIO_DIAG
-#include "mate_diag.h"
+#include "mate_audio.h"
 #endif
 
 #if CONFIG_USE_AUDIO_PROCESSOR
@@ -263,7 +263,7 @@ void AfeAudioEngine::Feed(std::vector<int16_t>&& data) {
     EventBits_t bits = xEventGroupGetBits(event_group_);
 #if CONFIG_MATE_AUDIO_DIAG
     // Mate (F3): nivel del micrófono tal como llega del códec, antes del AFE.
-    static MateLevelMeter mic_meter("microfono", 1000000);
+    static MateLevelMeter mic_meter("microfono");
     mic_meter.Add(data.data(), data.size());
 #endif
     if ((bits & kVoiceProcessingEnabled) && !kUseAfeForVoiceProcessing) {
@@ -462,10 +462,11 @@ void AfeAudioEngine::ProcessingTask() {
 
 void AfeAudioEngine::HandleWakeWordResult(const afe_fetch_result_t* result) {
 #if CONFIG_MATE_AUDIO_DIAG
-    // Mate (F3): nivel a la salida del AFE, que es lo que escucha el detector.
-    static MateLevelMeter afe_meter("salida AFE", 1000000);
-    static int diag_lines = 0;
-    if (afe_meter.Add(result->data, result->data_size / sizeof(int16_t)) && ++diag_lines % 10 == 0) {
+    // Mate (F3): cada 10 segundos, qué detector está activo y con qué frases.
+    static int64_t last_summary_us = 0;
+    const int64_t now_us = esp_timer_get_time();
+    if (now_us - last_summary_us >= 10000000) {
+        last_summary_us = now_us;
         if (wake_detector_ == WakeDetector::kMultiNet) {
             custom_wake_word_->LogDiagSummary();
         } else {

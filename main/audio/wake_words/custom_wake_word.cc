@@ -13,7 +13,13 @@
 #define TAG "CustomWakeWord"
 
 #if CONFIG_MATE_AUDIO_DIAG
-#include "mate_diag.h"
+#include "mate_audio.h"
+
+#if CONFIG_MATE_WAKE_WORD_GAIN > 0
+static constexpr int kMateDetectorGain = CONFIG_MATE_WAKE_WORD_GAIN;
+#else
+static constexpr int kMateDetectorGain = 0;
+#endif
 
 // Mate (F3): umbral bajo para que MultiNet informe también las coincidencias débiles.
 // El robot solo se despierta si la frase es de acción "wake" y supera el umbral real.
@@ -194,7 +200,8 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
                     " umbral=" + std::to_string(static_cast<int>(threshold_ * 100 + 0.5f)) +
                     "% (medicion desde " +
                     std::to_string(static_cast<int>(kMateDiagThreshold * 100 + 0.5f)) +
-                    "%) no_cargadas=" + std::to_string(rejected_commands) + " frases:" +
+                    "%) ganancia=x" + std::to_string(kMateDetectorGain) +
+                    " no_cargadas=" + std::to_string(rejected_commands) + " frases:" +
                     diag_summary_;
     LogDiagSummary();
 #endif
@@ -270,7 +277,18 @@ void CustomWakeWord::FeedSamples(const int16_t* data, size_t samples, bool mono)
         wake_word_audio_cache_.Store(input_buffer_.data(), chunksize);
 #endif
 
-        esp_mn_state_t mn_state = multinet_->detect(multinet_model_data_, input_buffer_.data());
+#if CONFIG_MATE_WAKE_WORD_GAIN > 0
+        detector_buffer_.resize(chunksize);
+        detector_high_pass_.Process(input_buffer_.data(), detector_buffer_.data(), chunksize,
+                                    static_cast<float>(CONFIG_MATE_WAKE_WORD_GAIN));
+        int16_t* detector_input = detector_buffer_.data();
+#else
+        int16_t* detector_input = input_buffer_.data();
+#endif
+#if CONFIG_MATE_AUDIO_DIAG
+        detector_meter_.Add(detector_input, chunksize);
+#endif
+        esp_mn_state_t mn_state = multinet_->detect(multinet_model_data_, detector_input);
         
         if (mn_state == ESP_MN_STATE_DETECTED) {
             esp_mn_results_t *mn_result = multinet_->get_results(multinet_model_data_);
