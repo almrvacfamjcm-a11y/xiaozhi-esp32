@@ -3,6 +3,7 @@
 #include "system_info.h"
 #include "assets.h"
 
+#include <esp_err.h>
 #include <esp_log.h>
 #include <esp_mn_iface.h>
 #include <esp_mn_models.h>
@@ -10,6 +11,31 @@
 #include <cJSON.h>
 
 #define TAG "CustomWakeWord"
+
+#if CONFIG_MATE_AUDIO_DIAG
+#include "mate_diag.h"
+
+// Mate (F3): umbral bajo para que MultiNet informe también las coincidencias débiles.
+// El robot solo se despierta si la frase es de acción "wake" y supera el umbral real.
+static constexpr float kMateDiagThreshold = 0.05f;
+
+#if CONFIG_SR_MN_EN_MULTINET7_QUANT
+// Mate (F3): frases de prueba, solo se miden y nunca despiertan al robot. Son
+// aproximaciones de «che mate» con los fonemas del modelo inglés. Alfabeto de
+// esp-sr/tool/multinet_g2p.py: CH=p EH=f EY=d M=M AA=n AH=c T=T IH=g.
+struct MateDiagPhrase {
+    int id;
+    const char* label;
+    const char* phonemes;
+};
+static const MateDiagPhrase kMateDiagPhrases[] = {
+    {101, "che mate A", "pf MnTf"},  // CH EH | M AA T EH
+    {102, "che mate B", "pd MnTd"},  // CH EY | M AA T EY
+    {103, "che mate C", "pf McTf"},  // CH EH | M AH T EH
+    {104, "che mate D", "pf MnTg"},  // CH EH | M AA T IH
+};
+#endif  // CONFIG_SR_MN_EN_MULTINET7_QUANT
+#endif  // CONFIG_MATE_AUDIO_DIAG
 
 CustomWakeWord::CustomWakeWord()
     : wake_word_opus_() {
@@ -85,6 +111,9 @@ void CustomWakeWord::ParseWakenetModelConfig() {
 bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
     codec_ = codec;
     commands_.clear();
+#if CONFIG_MATE_AUDIO_DIAG
+    diag_summary_.clear();
+#endif
 
     if (models_list == nullptr) {
         language_ = "cn";
@@ -121,11 +150,55 @@ bool CustomWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) 
     multinet_->set_det_threshold(multinet_model_data_, threshold_);
     input_buffer_.reserve(multinet_->get_samp_chunksize(multinet_model_data_));
     esp_mn_commands_clear();
+    int rejected_commands = 0;
     for (int i = 0; i < commands_.size(); i++) {
-        esp_mn_commands_add(i + 1, commands_[i].command.c_str());
+        esp_err_t add_result = esp_mn_commands_add(i + 1, commands_[i].command.c_str());
+        if (add_result != ESP_OK) {
+            rejected_commands++;
+            ESP_LOGE(TAG, "MultiNet did not accept command %d \"%s\": %s", i + 1,
+                     commands_[i].command.c_str(), esp_err_to_name(add_result));
+        }
+#if CONFIG_MATE_AUDIO_DIAG
+        diag_summary_ += " [" + std::to_string(i + 1) + " '" + commands_[i].command + "' " +
+                         commands_[i].action + (add_result == ESP_OK ? " ok]" : " RECHAZADA]");
+#endif
     }
-    esp_mn_commands_update();
-    
+#if CONFIG_MATE_AUDIO_DIAG
+    multinet_->set_det_threshold(multinet_model_data_, kMateDiagThreshold);
+#if CONFIG_SR_MN_EN_MULTINET7_QUANT
+    for (const auto& phrase : kMateDiagPhrases) {
+        esp_err_t add_result = esp_mn_commands_phoneme_add(phrase.id, phrase.label, phrase.phonemes);
+        if (add_result != ESP_OK) {
+            ESP_LOGE(TAG, "MultiNet did not accept test phrase %d \"%s\" (%s): %s", phrase.id,
+                     phrase.label, phrase.phonemes, esp_err_to_name(add_result));
+        }
+        diag_summary_ += " [" + std::to_string(phrase.id) + " '" + phrase.label + "' " +
+                         phrase.phonemes + (add_result == ESP_OK ? " ok]" : " RECHAZADA]");
+    }
+#endif
+#endif
+    // esp_mn_commands_update() returns the phrases MultiNet could not load (or nullptr).
+    esp_mn_error_t* update_errors = esp_mn_commands_update();
+    if (update_errors != nullptr) {
+        for (int i = 0; i < update_errors->num; i++) {
+            rejected_commands++;
+            ESP_LOGE(TAG, "MultiNet could not load command %d \"%s\"",
+                     update_errors->phrases[i]->command_id, update_errors->phrases[i]->string);
+        }
+    }
+    if (rejected_commands > 0) {
+        ESP_LOGE(TAG, "%d wake word command(s) were not loaded", rejected_commands);
+    }
+#if CONFIG_MATE_AUDIO_DIAG
+    diag_summary_ = std::string("MultiNet modelo=") + mn_name_ + " idioma=" + language_ +
+                    " umbral=" + std::to_string(static_cast<int>(threshold_ * 100 + 0.5f)) +
+                    "% (medicion desde " +
+                    std::to_string(static_cast<int>(kMateDiagThreshold * 100 + 0.5f)) +
+                    "%) no_cargadas=" + std::to_string(rejected_commands) + " frases:" +
+                    diag_summary_;
+    LogDiagSummary();
+#endif
+
     multinet_->print_active_speech_commands(multinet_model_data_);
 #if CONFIG_SEND_WAKE_WORD_DATA
     if (!wake_word_audio_cache_.Initialize(16000 * 2)) {
@@ -201,10 +274,33 @@ void CustomWakeWord::FeedSamples(const int16_t* data, size_t samples, bool mono)
         
         if (mn_state == ESP_MN_STATE_DETECTED) {
             esp_mn_results_t *mn_result = multinet_->get_results(multinet_model_data_);
+#if CONFIG_MATE_AUDIO_DIAG
+            ESP_LOGI(MATE_DIAG_TAG, "MultiNet: coincidencia, oyo: \"%s\" (libre: \"%s\")",
+                     mn_result->string, mn_result->raw_string);
+#endif
             for (int i = 0; i < mn_result->num && running_; i++) {
                 ESP_LOGI(TAG, "Custom wake word detected: command_id=%d, string=%s, prob=%f", 
                         mn_result->command_id[i], mn_result->string, mn_result->prob[i]);
-                auto& command = commands_[mn_result->command_id[i] - 1];
+                const int command_id = mn_result->command_id[i];
+                if (command_id < 1 || command_id > static_cast<int>(commands_.size())) {
+#if CONFIG_MATE_AUDIO_DIAG
+                    ESP_LOGI(MATE_DIAG_TAG, "MultiNet: frase de prueba id=%d prob=%d%% (solo medicion)",
+                             command_id, static_cast<int>(mn_result->prob[i] * 100 + 0.5f));
+#endif
+                    continue;
+                }
+                auto& command = commands_[command_id - 1];
+#if CONFIG_MATE_AUDIO_DIAG
+                const bool above_threshold = mn_result->prob[i] >= threshold_;
+                ESP_LOGI(MATE_DIAG_TAG, "MultiNet: '%s' id=%d prob=%d%% umbral=%d%% -> %s",
+                         command.command.c_str(), command_id,
+                         static_cast<int>(mn_result->prob[i] * 100 + 0.5f),
+                         static_cast<int>(threshold_ * 100 + 0.5f),
+                         above_threshold ? "despierta" : "bajo el umbral, no despierta");
+                if (!above_threshold) {
+                    continue;
+                }
+#endif
                 if (command.action == "wake") {
                     last_detected_wake_word_ = command.text;
                     running_ = false;
@@ -218,6 +314,15 @@ void CustomWakeWord::FeedSamples(const int16_t* data, size_t samples, bool mono)
             multinet_->clean(multinet_model_data_);
         } else if (mn_state == ESP_MN_STATE_TIMEOUT) {
             ESP_LOGD(TAG, "Command word detection timeout, cleaning state");
+#if CONFIG_MATE_AUDIO_DIAG
+            // Lo que MultiNet transcribió en la ventana que termina sin coincidencia.
+            esp_mn_results_t* timeout_result = multinet_->get_results(multinet_model_data_);
+            if (timeout_result != nullptr &&
+                (timeout_result->string[0] != '\0' || timeout_result->raw_string[0] != '\0')) {
+                ESP_LOGI(MATE_DIAG_TAG, "MultiNet: ventana sin coincidencia, oyo: \"%s\" (libre: \"%s\")",
+                         timeout_result->string, timeout_result->raw_string);
+            }
+#endif
             multinet_->clean(multinet_model_data_);
         }
         
@@ -227,6 +332,12 @@ void CustomWakeWord::FeedSamples(const int16_t* data, size_t samples, bool mono)
         input_buffer_.erase(input_buffer_.begin(), input_buffer_.begin() + chunksize);
     }
 }
+
+#if CONFIG_MATE_AUDIO_DIAG
+void CustomWakeWord::LogDiagSummary() const {
+    ESP_LOGI(MATE_DIAG_TAG, "%s", diag_summary_.c_str());
+}
+#endif
 
 size_t CustomWakeWord::GetFeedSize() {
     if (multinet_model_data_ == nullptr) {

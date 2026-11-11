@@ -1039,6 +1039,16 @@ config CUSTOM_WAKE_WORD_THRESHOLD
     help
         Custom Wake Word Threshold, range 1-99, the smaller the more sensitive, default 20
 
+config MATE_AUDIO_DIAG
+    bool "Mate: audio diagnostics in the serial log (temporary, F3)"
+    default y
+    depends on USE_AFE_WAKE_WORD || USE_CUSTOM_WAKE_WORD
+    help
+        Temporary diagnostics for the Mate 1 wake word work (F3). Logs the microphone
+        level once per second and, with a MultiNet custom wake word, the load result of
+        every phrase and the score of every detection, including test phrases that are
+        only measured and never wake the device. Set to n when F3 is closed.
+
 config SEND_WAKE_WORD_DATA
     bool "Send Wake Word Data"
     default y

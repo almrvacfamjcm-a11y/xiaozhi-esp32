@@ -15,6 +15,10 @@
 
 #define TAG "AfeAudioEngine"
 
+#if CONFIG_MATE_AUDIO_DIAG
+#include "mate_diag.h"
+#endif
+
 #if CONFIG_USE_AUDIO_PROCESSOR
 static constexpr bool kUseAfeForVoiceProcessing = true;
 #else
@@ -257,6 +261,11 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
 
 void AfeAudioEngine::Feed(std::vector<int16_t>&& data) {
     EventBits_t bits = xEventGroupGetBits(event_group_);
+#if CONFIG_MATE_AUDIO_DIAG
+    // Mate (F3): nivel del micrófono tal como llega del códec, antes del AFE.
+    static MateLevelMeter mic_meter("microfono", 1000000);
+    mic_meter.Add(data.data(), data.size());
+#endif
     if ((bits & kVoiceProcessingEnabled) && !kUseAfeForVoiceProcessing) {
         OutputRawAudio(data);
     }
@@ -452,6 +461,23 @@ void AfeAudioEngine::ProcessingTask() {
 }
 
 void AfeAudioEngine::HandleWakeWordResult(const afe_fetch_result_t* result) {
+#if CONFIG_MATE_AUDIO_DIAG
+    // Mate (F3): nivel a la salida del AFE, que es lo que escucha el detector.
+    static MateLevelMeter afe_meter("salida AFE", 1000000);
+    static int diag_lines = 0;
+    if (afe_meter.Add(result->data, result->data_size / sizeof(int16_t)) && ++diag_lines % 10 == 0) {
+        if (wake_detector_ == WakeDetector::kMultiNet) {
+            custom_wake_word_->LogDiagSummary();
+        } else {
+            ESP_LOGI(MATE_DIAG_TAG, "WakeNet palabra='%s'",
+                     wake_words_.empty() ? "?" : wake_words_[0].c_str());
+        }
+    }
+    if (wake_detector_ == WakeDetector::kWakeNet && result->wakeup_state == WAKENET_DETECTED) {
+        ESP_LOGI(MATE_DIAG_TAG, "WakeNet: detectada, modelo=%d volumen=%d dB",
+                 result->wakenet_model_index, static_cast<int>(result->data_volume));
+    }
+#endif
     if (wake_detector_ == WakeDetector::kMultiNet) {
         custom_wake_word_->FeedMono(result->data, result->data_size / sizeof(int16_t));
         return;

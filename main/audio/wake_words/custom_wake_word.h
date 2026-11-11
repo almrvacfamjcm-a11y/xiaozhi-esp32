@@ -36,6 +36,10 @@ public:
     bool GetWakeWordOpus(std::vector<uint8_t>& opus);
     const std::string& GetLastDetectedWakeWord() const { return last_detected_wake_word_; }
     std::vector<std::string> GetWakeWords() const override;
+#if CONFIG_MATE_AUDIO_DIAG
+    // Mate (F3): escribe en el registro el modelo, el umbral y las frases cargadas.
+    void LogDiagSummary() const;
+#endif
 
 private:
     struct Command {
@@ -54,6 +58,9 @@ private:
     int duration_ = 3000;
     float threshold_ = 0.2;
     std::deque<Command> commands_;
+#if CONFIG_MATE_AUDIO_DIAG
+    std::string diag_summary_;
+#endif
  
     std::function<void(const std::string& wake_word)> wake_word_detected_callback_;
     AudioCodec* codec_ = nullptr;
