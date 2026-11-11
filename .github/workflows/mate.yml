@@ -1,6 +1,9 @@
 # Compila solo el firmware de Mate 1 (no toda la lista de placas de XiaoZhi).
 # Misma imagen y mismo script que la compilación oficial ("Build Boards"),
 # pero pasando la palabra de activación y el idioma de forma explícita.
+# Cada compilación produce dos versiones, una por palabra de activación:
+#   - jarvis:  «Jarvis», modelo preentrenado (WakeNet), configuración config.json
+#   - heymate: «Hey Mate», frase propia (MultiNet en inglés), configuración mate.json
 name: Build Mate
 
 on:
@@ -17,10 +20,20 @@ permissions:
 
 jobs:
   build:
-    name: Build Mate 1 (bread-compact-wifi-128x64, Jarvis)
+    name: Build Mate 1 (${{ matrix.label }})
     runs-on: ubuntu-latest
     container:
       image: espressif/idf:release-v6.1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: jarvis
+            config: config.json
+            wake_word: wn9_jarvis_tts
+          - label: heymate
+            config: mate.json
+            wake_word: custom
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -30,13 +43,14 @@ jobs:
         run: |
           source "$IDF_PATH/export.sh"
           python scripts/build.py bread-compact-wifi \
+            -c "${{ matrix.config }}" \
             --name bread-compact-wifi-128x64 \
             --language es-ES \
-            --wake-word wn9_jarvis_tts
+            --wake-word "${{ matrix.wake_word }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: mate1_bread-compact-wifi-128x64_${{ github.sha }}
+          name: mate1_${{ matrix.label }}_${{ github.sha }}
           path: build/merged-binary.bin
           if-no-files-found: error
