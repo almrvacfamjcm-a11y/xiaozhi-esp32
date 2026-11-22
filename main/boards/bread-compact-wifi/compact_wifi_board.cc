@@ -32,7 +32,7 @@ LV_FONT_DECLARE(font_material_symbols_30_1);
 
 // Mate 1 (128x64 only):
 // - 3-second welcome screen at boot, drawn on top of the normal UI.
-// - Butler faces (monocle and mustache) covering the content area, with a random blink.
+// - Friendly faces (round eyes and a small mouth) covering the content area, with a random blink.
 //   The ~20 cloud emotions are grouped into 10 faces (see FaceFor).
 // - A non-empty "system" message (activation code, Wi-Fi setup, errors) hides the face so its
 //   text stays readable. Conversation text stays hidden behind the face.

@@ -1041,13 +1041,13 @@ config CUSTOM_WAKE_WORD_THRESHOLD
 
 config MATE_AUDIO_DIAG
     bool "Mate: audio diagnostics in the serial log (temporary, F3)"
-    default y
+    default n
     depends on USE_AFE_WAKE_WORD || USE_CUSTOM_WAKE_WORD
     help
         Temporary diagnostics for the Mate 1 wake word work (F3). Logs the microphone
         level once per second and, with a MultiNet custom wake word, the load result of
         every phrase and the score of every detection, including test phrases that are
-        only measured and never wake the device. Set to n when F3 is closed.
+        only measured and never wake the device. Off by default since F4.
 
 config MATE_MIC_HIGH_PASS
     bool "Mate: 100 Hz high-pass filter on the microphone"

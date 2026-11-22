@@ -1,9 +1,8 @@
 # Compila solo el firmware de Mate 1 (no toda la lista de placas de XiaoZhi).
-# Misma imagen y mismo script que la compilación oficial ("Build Boards"),
-# pero pasando la palabra de activación y el idioma de forma explícita.
-# Cada compilación produce dos versiones, una por palabra de activación:
-#   - jarvis:  «Jarvis», modelo preentrenado (WakeNet), configuración config.json
-#   - heymate: «Hey Mate», frase propia (MultiNet en inglés), configuración mate.json
+# Misma imagen y mismo script que la compilación oficial ("Build Boards"), con la palabra de
+# activación y el idioma fijados. La configuración propia de Mate (pantalla 128x64, servidor de
+# casa, sin mandar el audio de la palabra de activación) está en
+# main/boards/bread-compact-wifi/mate.json.
 name: Build Mate
 
 on:
@@ -29,11 +28,8 @@ jobs:
       matrix:
         include:
           - label: jarvis
-            config: config.json
-            wake_word: wn9_jarvis_tts
-          - label: heymate
             config: mate.json
-            wake_word: custom
+            wake_word: wn9_jarvis_tts
     steps:
       - name: Checkout
         uses: actions/checkout@v7

@@ -1,12 +1,13 @@
-"""Mate 1 faces: 128x48, 1 bit (1 = lit pixel). Butler style: monocle on the right eye
-(viewer's right) and a handlebar mustache. Generates previews and the C++ data file."""
+"""Mate 1 faces: 128x48, 1 bit (1 = lit pixel). Friendly style (option B, 22/11/2026): round
+eyes with a small highlight and a small mouth. Generates previews and the C++ data file."""
 
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 128, 48
-LX, RX, EY = 38, 90, 17   # eye centres
-EW, EH, ER = 20, 22, 7    # eye size and corner radius
+LX, RX, EY = 42, 86, 19   # eye centres
+R = 12                    # eye radius
+MX, MY = 64, 36           # mouth centre
 
 
 def canvas():
@@ -15,89 +16,71 @@ def canvas():
 
 
 # ---------- eyes ----------
-def eye_open(d, cx, cy=EY, w=EW, h=EH, r=ER, dy=0, dx=0):
-    d.rounded_rectangle([cx - w // 2 + dx, cy - h // 2 + dy, cx + w // 2 - 1 + dx, cy + h // 2 - 1 + dy],
-                        radius=r, fill=1)
+def eye_round(d, cx, cy=EY, r=R, look=(0, 0)):
+    """Solid round eye with a dark highlight; look moves the highlight (where it is looking)."""
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=1)
+    hx, hy = cx + r // 2 - 1 + look[0], cy - r // 2 + 1 + look[1]
+    d.ellipse([hx - 3, hy - 3, hx + 3, hy + 3], fill=0)
 
 
-def eye_closed_line(d, cx, cy=EY + 3):
-    d.rounded_rectangle([cx - 10, cy - 1, cx + 9, cy + 1], radius=1, fill=1)
+def eye_closed(d, cx, cy=EY):
+    d.rounded_rectangle([cx - 12, cy - 1, cx + 11, cy + 1], radius=1, fill=1)
 
 
-def eye_happy(d, cx, cy=EY + 4, w=20, h=16, t=4):
+def eye_happy(d, cx, cy=EY):
     # upward arc (^)
-    d.arc([cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2 + 6], 195, 345, fill=1, width=t)
+    d.arc([cx - 12, cy - 8, cx + 12, cy + 14], 200, 340, fill=1, width=5)
 
 
-def eye_sleep(d, cx, cy=EY - 2, w=20, h=12, t=3):
+def eye_sleep(d, cx, cy=EY):
     # downward arc (u), closed and relaxed
-    d.arc([cx - w // 2, cy - h // 2, cx + w // 2, cy + h // 2], 15, 165, fill=1, width=t)
+    d.arc([cx - 11, cy - 8, cx + 11, cy + 6], 20, 160, fill=1, width=3)
 
 
-def eye_laugh(d, cx, side, cy=EY + 1):
+def eye_laugh(d, cx, side, cy=EY):
     # > < squint
     if side == "L":
-        pts = [(cx - 8, cy - 7), (cx + 7, cy), (cx - 8, cy + 7)]
+        pts = [(cx - 9, cy - 8), (cx + 8, cy), (cx - 9, cy + 8)]
     else:
-        pts = [(cx + 7, cy - 7), (cx - 8, cy), (cx + 7, cy + 7)]
+        pts = [(cx + 8, cy - 8), (cx - 9, cy), (cx + 8, cy + 8)]
     d.line(pts, fill=1, width=4, joint="curve")
 
 
 def eye_heart(d, cx, cy=EY):
-    s = 5
-    d.ellipse([cx - 2 * s, cy - s - 3, cx, cy + s - 3], fill=1)
-    d.ellipse([cx, cy - s - 3, cx + 2 * s, cy + s - 3], fill=1)
-    d.polygon([(cx - 2 * s + 1, cy), (cx + 2 * s - 1, cy), (cx, cy + 2 * s - 1)], fill=1)
+    s = 6
+    d.ellipse([cx - 2 * s, cy - s - 4, cx, cy + s - 4], fill=1)
+    d.ellipse([cx, cy - s - 4, cx + 2 * s, cy + s - 4], fill=1)
+    d.polygon([(cx - 2 * s + 1, cy - 1), (cx + 2 * s - 1, cy - 1), (cx, cy + 2 * s - 2)], fill=1)
 
 
 def lid_cut(d, pts):
     d.polygon(pts, fill=0)
 
 
-# ---------- monocle and mustache ----------
-def monocle(d, cx=RX, cy=EY, r=14):
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=1, width=2)
-    # chain: dotted curve from the ring down to the bottom edge
-    for x, y in [(101, 28), (103, 31), (105, 34), (107, 37), (109, 40), (110, 43), (111, 46)]:
-        d.point([(x, y), (x + 1, y)], fill=1)
+# ---------- mouths ----------
+def mouth_smile(d):
+    d.arc([MX - 9, MY - 6, MX + 9, MY + 6], 25, 155, fill=1, width=2)
 
 
-def mustache(d, mood="neutral"):
-    cx, cy = 64, 36
-    # two lobes meeting under the "nose"
-    d.ellipse([cx - 17, cy - 3, cx + 1, cy + 4], fill=1)
-    d.ellipse([cx - 1, cy - 3, cx + 17, cy + 4], fill=1)
-    d.rectangle([cx - 1, cy - 4, cx, cy - 2], fill=0)  # small notch in the middle
-    if mood == "up":
-        tipL = [(cx - 16, cy + 1), (cx - 21, cy), (cx - 24, cy - 3), (cx - 23, cy - 5)]
-        tipR = [(cx + 16, cy + 1), (cx + 21, cy), (cx + 24, cy - 3), (cx + 23, cy - 5)]
-    elif mood == "down":
-        tipL = [(cx - 16, cy + 2), (cx - 20, cy + 4), (cx - 22, cy + 6), (cx - 22, cy + 8)]
-        tipR = [(cx + 16, cy + 2), (cx + 20, cy + 4), (cx + 22, cy + 6), (cx + 22, cy + 8)]
-    elif mood == "flat":
-        tipL = [(cx - 16, cy + 1), (cx - 22, cy + 1), (cx - 24, cy)]
-        tipR = [(cx + 16, cy + 1), (cx + 22, cy + 1), (cx + 24, cy)]
-    elif mood == "wink":  # one side up, the other neutral
-        tipL = [(cx - 16, cy + 1), (cx - 21, cy + 1), (cx - 23, cy - 2)]
-        tipR = [(cx + 16, cy + 1), (cx + 21, cy), (cx + 24, cy - 3), (cx + 23, cy - 5)]
-    else:  # neutral: gentle curl
-        tipL = [(cx - 16, cy + 1), (cx - 21, cy + 1), (cx - 23, cy - 2), (cx - 22, cy - 4)]
-        tipR = [(cx + 16, cy + 1), (cx + 21, cy + 1), (cx + 23, cy - 2), (cx + 22, cy - 4)]
-    d.line(tipL, fill=1, width=2, joint="curve")
-    d.line(tipR, fill=1, width=2, joint="curve")
+def mouth_open(d, big=False):
+    w = 12 if big else 10
+    d.chord([MX - w, MY - 6, MX + w, MY + 10], 0, 180, fill=1)
 
 
-def mouth_open(d):
-    d.chord([57, 36, 71, 47], 0, 180, fill=1)
+def mouth_frown(d):
+    d.arc([MX - 8, MY + 1, MX + 8, MY + 11], 205, 335, fill=1, width=2)
+
+
+def mouth_flat(d, dx=0):
+    d.rectangle([MX - 5 + dx, MY + 2, MX + 5 + dx, MY + 3], fill=1)
 
 
 def mouth_o(d):
-    d.ellipse([60, 40, 67, 47], outline=1, width=2)
+    d.ellipse([MX - 4, MY - 1, MX + 4, MY + 8], outline=1, width=2)
 
 
 def zz(d):
-    # small "z z" over the monocle side
-    for (x, y, s) in [(110, 4, 5), (118, 0, 4)]:
+    for (x, y, s) in [(108, 6, 5), (116, 1, 4)]:
         d.line([(x, y), (x + s, y), (x, y + s), (x + s, y + s)], fill=1, width=1)
 
 
@@ -106,64 +89,61 @@ def face(name, blink=False):
     img, d = canvas()
     if name == "neutral":
         if blink:
-            eye_closed_line(d, LX); eye_closed_line(d, RX)
+            eye_closed(d, LX); eye_closed(d, RX)
         else:
-            eye_open(d, LX); eye_open(d, RX)
-        monocle(d); mustache(d, "neutral")
+            eye_round(d, LX); eye_round(d, RX)
+        mouth_smile(d)
     elif name == "happy":
         eye_happy(d, LX); eye_happy(d, RX)
-        monocle(d); mustache(d, "up")
+        mouth_open(d)
     elif name == "sad":
         if blink:
-            eye_closed_line(d, LX, EY + 5); eye_closed_line(d, RX, EY + 5)
+            eye_closed(d, LX, EY + 4); eye_closed(d, RX, EY + 4)
         else:
-            eye_open(d, LX, dy=2); eye_open(d, RX, dy=2)
+            eye_round(d, LX, EY + 2, look=(-6, 8)); eye_round(d, RX, EY + 2, look=(-6, 8))
             # lids falling towards the outside
-            lid_cut(d, [(LX - 12, EY - 12), (LX + 12, EY - 12), (LX + 12, EY - 9), (LX - 12, EY + 3)])
-            lid_cut(d, [(RX - 12, EY - 12), (RX + 12, EY - 12), (RX + 12, EY + 3), (RX - 12, EY - 9)])
-        monocle(d); mustache(d, "down")
+            lid_cut(d, [(LX - 14, EY - 12), (LX + 14, EY - 12), (LX + 14, EY - 8), (LX - 14, EY + 1)])
+            lid_cut(d, [(RX - 14, EY - 12), (RX + 14, EY - 12), (RX + 14, EY + 1), (RX - 14, EY - 8)])
+        mouth_frown(d)
     elif name == "surprised":
         if blink:
-            eye_closed_line(d, LX); eye_closed_line(d, RX)
+            eye_closed(d, LX); eye_closed(d, RX)
         else:
-            eye_open(d, LX, w=24, h=26, r=11); eye_open(d, RX, w=24, h=26, r=11)
-        monocle(d, r=16); mustache(d, "flat"); mouth_o(d)
+            eye_round(d, LX, r=14); eye_round(d, RX, r=14)
+        mouth_o(d)
     elif name == "thinking":
         if blink:
-            eye_closed_line(d, LX - 3, EY); eye_closed_line(d, RX - 3, EY)
+            eye_closed(d, LX); eye_closed(d, RX)
         else:
-            # looking up and to the side, left eye half closed
-            eye_open(d, LX, dx=-3, dy=-2)
-            lid_cut(d, [(LX - 16, EY - 14), (LX + 10, EY - 14), (LX + 10, EY - 1), (LX - 16, EY - 1)])
-            eye_open(d, RX, dx=-3, dy=-2)
-        # raised eyebrow over the left eye
-        d.line([(LX - 14, EY - 6), (LX - 4, EY - 11), (LX + 6, EY - 9)], fill=1, width=3, joint="curve")
-        monocle(d); mustache(d, "wink")
+            # looking up and to the side
+            eye_round(d, LX, look=(-8, -2)); eye_round(d, RX, look=(-8, -2))
+        mouth_flat(d, dx=5)
     elif name == "angry":
         if blink:
-            eye_closed_line(d, LX, EY + 4); eye_closed_line(d, RX, EY + 4)
+            eye_closed(d, LX, EY + 3); eye_closed(d, RX, EY + 3)
         else:
-            eye_open(d, LX, dy=2); eye_open(d, RX, dy=2)
+            eye_round(d, LX, EY + 2, look=(-6, 8)); eye_round(d, RX, EY + 2, look=(-6, 8))
             # lids falling towards the centre
-            lid_cut(d, [(LX - 12, EY - 12), (LX + 12, EY - 12), (LX + 12, EY + 3), (LX - 12, EY - 7)])
-            lid_cut(d, [(RX - 12, EY - 12), (RX + 12, EY - 12), (RX + 12, EY - 7), (RX - 12, EY + 3)])
-        monocle(d); mustache(d, "flat")
+            lid_cut(d, [(LX - 14, EY - 12), (LX + 14, EY - 12), (LX + 14, EY + 1), (LX - 14, EY - 7)])
+            lid_cut(d, [(RX - 14, EY - 12), (RX + 14, EY - 12), (RX + 14, EY - 7), (RX - 14, EY + 1)])
+        mouth_flat(d)
     elif name == "laughing":
         eye_laugh(d, LX, "L"); eye_laugh(d, RX, "R")
-        monocle(d); mustache(d, "up"); mouth_open(d)
+        mouth_open(d, big=True)
     elif name == "loving":
         eye_heart(d, LX); eye_heart(d, RX)
-        monocle(d); mustache(d, "up")
+        mouth_smile(d)
     elif name == "sleepy":
         eye_sleep(d, LX, EY + 2); eye_sleep(d, RX, EY + 2)
-        monocle(d); mustache(d, "down"); zz(d)
+        mouth_flat(d)
+        zz(d)
     elif name == "winking":
         if blink:
-            eye_closed_line(d, LX)
+            eye_closed(d, LX)
         else:
-            eye_open(d, LX)
+            eye_round(d, LX)
         eye_happy(d, RX)
-        monocle(d); mustache(d, "wink")
+        mouth_smile(d)
     else:
         raise ValueError(name)
     return img
