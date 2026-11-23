@@ -25,6 +25,7 @@
 #include <cstring>
 
 #include "mate_faces.h"
+#include "settings.h"
 
 #define TAG "CompactWifiBoard"
 
@@ -349,6 +350,17 @@ public:
         InitializeSsd1306Display();
         InitializeButtons();
         InitializeTools();
+        SetMateDefaultVolume();
+    }
+
+    // Mate: with the MAX98357A and no gain resistor, the stock default (70, about -6 dB) is too
+    // quiet. If the volume was never saved (freshly flashed firmware), start at 100.
+    // A volume set later (by voice or buttons) is kept.
+    static void SetMateDefaultVolume() {
+        Settings settings("audio", true);
+        if (settings.GetInt("output_volume", -1) < 0) {
+            settings.SetInt("output_volume", 100);
+        }
     }
 
     virtual Led* GetLed() override {
